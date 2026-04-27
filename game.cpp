@@ -1,8 +1,9 @@
 #include "precomp.h"
 #include "game.h"
+#include <iostream>
 
 #define LINES		750
-#define LINEFILE	"lines750.dat"
+#define LINEFILE	"lines751.dat"
 #define ITERATIONS	16
 
 int lx1[LINES], ly1[LINES], lx2[LINES], ly2[LINES];			// lines: start and end coordinates
@@ -24,6 +25,19 @@ Timer timer;
 #define GetGValue(RGBColor) (BYTE) (((uint)RGBColor) >> 8)
 #define GetBValue(RGBColor) (BYTE) (((uint)RGBColor) >> 16)
 
+const bool saveProgress = false;
+const double measurementDelay = 100;
+const bool check_correctness = false;
+
+unsigned long curTicks = 0;
+unsigned long curIter = 0;
+unsigned long curLines = 0;
+float curElapsed = 0;
+float avg_ips = 0;
+float avg_tps = 0;
+float avg_lps = 0;
+
+
 // -----------------------------------------------------------
 // Mutate
 // Randomly modify or replace one line.
@@ -35,7 +49,7 @@ void MutateLine( int i )
 	x2_ = lx2[i], y2_ = ly2[i];
 	c_ = lc[i];
 	do
-	{
+	{   
 		if (rand() & 1)
 		{
 			// color mutation (50% probability)
@@ -136,26 +150,51 @@ void DrawWuLine( Surface *screen, int X0, int Y0, int X1, int Y1, uint clrLine )
             weighting for the paired pixel */
             Weighting = ErrorAcc >> 8;
 
+            BYTE rr, gr, br;
             COLORREF clrBackGround = screen->pixels[X0 + Y0 * SCRWIDTH];
             BYTE rb = GetRValue( clrBackGround );
             BYTE gb = GetGValue( clrBackGround );
             BYTE bb = GetBValue( clrBackGround );
-            double grayb = rb * 0.299 + gb * 0.587 + bb * 0.114;
+            short n_weight = rl <= rb && gl <= gb && bl < bb ? Weighting : grayl < rb * 0.299 + gb * 0.587 + bb * 0.114 ? Weighting : (Weighting ^ 255);
 
-            BYTE rr = ( rb > rl ? ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( rb - rl ) + rl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( rl - rb ) + rb ) ) );
-            BYTE gr = ( gb > gl ? ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( gb - gl ) + gl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( gl - gb ) + gb ) ) );
-            BYTE br = ( bb > bl ? ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( bb - bl ) + bl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( bl - bb ) + bb ) ) );
+            rr = ((rb > rl ? (n_weight * (rb - rl) + rl * 255) : (n_weight * (rl - rb) + rb * 255)) >> 8) + 1;
+            gr = ((gb > gl ? (n_weight * (gb - gl) + gl * 255) : (n_weight * (gl - gb) + gb * 255)) >> 8) + 1;
+            br = ((bb > bl ? (n_weight * (bb - bl) + bl * 255) : (n_weight * (bl - bb) + bb * 255)) >> 8) + 1;
+            
+            if (check_correctness)
+            {
+                double grayb = rb * 0.299 + gb * 0.587 + bb * 0.114;
+                BYTE rrr = ( rb > rl ? ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( rb - rl ) + rl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( rl - rb ) + rb ) ) );
+                BYTE grr = ( gb > gl ? ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( gb - gl ) + gl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( gl - gb ) + gb ) ) );
+                BYTE brr = ( bb > bl ? ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( bb - bl ) + bl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( bl - bb ) + bb ) ) );
+            
+                if (std::abs(rr - rrr) > 1 || std::abs(gr - grr) > 1 || std::abs(br - brr) > 1)
+                    std::cout << "incorrect";
+            }
+
             screen->Plot( X0, Y0, RGB( rr, gr, br ) );
 
             clrBackGround = screen->pixels[X0 + XDir + Y0 * SCRWIDTH];
             rb = GetRValue( clrBackGround );
             gb = GetGValue( clrBackGround );
             bb = GetBValue( clrBackGround );
-            grayb = rb * 0.299 + gb * 0.587 + bb * 0.114;
+            n_weight = rl <= rb && gl <= gb && bl < bb ? (Weighting ^ 255) : grayl < rb * 0.299 + gb * 0.587 + bb * 0.114 ? (Weighting ^ 255) : Weighting;
 
-            rr = ( rb > rl ? ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( rb - rl ) + rl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( rl - rb ) + rb ) ) );
-            gr = ( gb > gl ? ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( gb - gl ) + gl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( gl - gb ) + gb ) ) );
-            br = ( bb > bl ? ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( bb - bl ) + bl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( bl - bb ) + bb ) ) );
+            rr = ((rb > rl ? (n_weight * (rb - rl) + rl * 255) : (n_weight * (rl - rb) + rb * 255)) >> 8) + 1;
+            gr = ((gb > gl ? (n_weight * (gb - gl) + gl * 255) : (n_weight * (gl - gb) + gb * 255)) >> 8) + 1;
+            br = ((bb > bl ? (n_weight * (bb - bl) + bl * 255) : (n_weight * (bl - bb) + bb * 255)) >> 8) + 1;
+
+            if (check_correctness)
+            {
+                double grayb = rb * 0.299 + gb * 0.587 + bb * 0.114;
+                BYTE rrr = (rb > rl ? ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (rb - rl) + rl)) : ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (rl - rb) + rb)));
+                BYTE grr = (gb > gl ? ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (gb - gl) + gl)) : ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (gl - gb) + gb)));
+                BYTE brr = (bb > bl ? ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (bb - bl) + bl)) : ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (bl - bb) + bb)));
+
+                if (std::abs(rr - rrr) > 1 || std::abs(gr - grr) > 1 || std::abs(br - brr) > 1)
+                    std::cout << "incorrect";
+            }
+
             screen->Plot( X0 + XDir, Y0, RGB( rr, gr, br ) );
         }
         /* Draw the final pixel, which is always exactly intersected by the line
@@ -181,15 +220,28 @@ void DrawWuLine( Surface *screen, int X0, int Y0, int X1, int Y1, uint clrLine )
         weighting for the paired pixel */
         Weighting = ErrorAcc >> 8;
 
+        BYTE rr, gr, br;
+
         COLORREF clrBackGround = screen->pixels[X0 + Y0 * SCRWIDTH];
         BYTE rb = GetRValue( clrBackGround );
         BYTE gb = GetGValue( clrBackGround );
-        BYTE bb = GetBValue( clrBackGround );
-        double grayb = rb * 0.299 + gb * 0.587 + bb * 0.114;
+        BYTE bb = GetBValue(clrBackGround);
+        short n_weight = rl <= rb && gl <= gb && bl < bb ? Weighting : grayl < rb * 0.299 + gb * 0.587 + bb * 0.114 ? Weighting : (Weighting ^ 255);
 
-        BYTE rr = ( rb > rl ? ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( rb - rl ) + rl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( rl - rb ) + rb ) ) );
-        BYTE gr = ( gb > gl ? ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( gb - gl ) + gl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( gl - gb ) + gb ) ) );
-        BYTE br = ( bb > bl ? ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( bb - bl ) + bl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?Weighting:(Weighting ^ 255)) ) / 255.0 * ( bl - bb ) + bb ) ) );
+        rr = ((rb > rl ? (n_weight * (rb - rl) + rl * 255) : (n_weight * (rl - rb) + rb * 255)) >> 8) + 1;
+        gr = ((gb > gl ? (n_weight * (gb - gl) + gl * 255) : (n_weight * (gl - gb) + gb * 255)) >> 8) + 1;
+        br = ((bb > bl ? (n_weight * (bb - bl) + bl * 255) : (n_weight * (bl - bb) + bb * 255)) >> 8) + 1;
+
+        if (check_correctness)
+        {
+            double grayb = rb * 0.299 + gb * 0.587 + bb * 0.114;
+            BYTE rrr = (rb > rl ? ((BYTE)(((double)(grayl < grayb ? Weighting : (Weighting ^ 255))) / 255.0 * (rb - rl) + rl)) : ((BYTE)(((double)(grayl < grayb ? Weighting : (Weighting ^ 255))) / 255.0 * (rl - rb) + rb)));
+            BYTE grr = (gb > gl ? ((BYTE)(((double)(grayl < grayb ? Weighting : (Weighting ^ 255))) / 255.0 * (gb - gl) + gl)) : ((BYTE)(((double)(grayl < grayb ? Weighting : (Weighting ^ 255))) / 255.0 * (gl - gb) + gb)));
+            BYTE brr = (bb > bl ? ((BYTE)(((double)(grayl < grayb ? Weighting : (Weighting ^ 255))) / 255.0 * (bb - bl) + bl)) : ((BYTE)(((double)(grayl < grayb ? Weighting : (Weighting ^ 255))) / 255.0 * (bl - bb) + bb)));
+
+            if (std::abs(rr - rrr) > 1 || std::abs(gr - grr) > 1 || std::abs(br - brr) > 1)
+                std::cout << "incorrect";
+        }
 
         screen->Plot( X0, Y0, RGB( rr, gr, br ) );
 
@@ -197,11 +249,22 @@ void DrawWuLine( Surface *screen, int X0, int Y0, int X1, int Y1, uint clrLine )
         rb = GetRValue( clrBackGround );
         gb = GetGValue( clrBackGround );
         bb = GetBValue( clrBackGround );
-        grayb = rb * 0.299 + gb * 0.587 + bb * 0.114;
+        n_weight = rl <= rb && gl <= gb && bl < bb ? (Weighting ^ 255) : grayl < rb * 0.299 + gb * 0.587 + bb * 0.114 ? (Weighting ^ 255) : Weighting;
 
-        rr = ( rb > rl ? ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( rb - rl ) + rl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( rl - rb ) + rb ) ) );
-        gr = ( gb > gl ? ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( gb - gl ) + gl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( gl - gb ) + gb ) ) );
-        br = ( bb > bl ? ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( bb - bl ) + bl ) ) : ( ( BYTE )( ( ( double )( grayl<grayb?(Weighting ^ 255):Weighting) ) / 255.0 * ( bl - bb ) + bb ) ) );
+        rr = ((rb > rl ? (n_weight * (rb - rl) + rl * 255) : (n_weight * (rl - rb) + rb * 255)) >> 8) + 1;
+        gr = ((gb > gl ? (n_weight * (gb - gl) + gl * 255) : (n_weight * (gl - gb) + gb * 255)) >> 8) + 1;
+        br = ((bb > bl ? (n_weight * (bb - bl) + bl * 255) : (n_weight * (bl - bb) + bb * 255)) >> 8) + 1;
+
+        if (check_correctness)
+        {
+            double grayb = rb * 0.299 + gb * 0.587 + bb * 0.114;
+            BYTE rrr = (rb > rl ? ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (rb - rl) + rl)) : ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (rl - rb) + rb)));
+            BYTE grr = (gb > gl ? ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (gb - gl) + gl)) : ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (gl - gb) + gb)));
+            BYTE brr = (bb > bl ? ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (bb - bl) + bl)) : ((BYTE)(((double)(grayl < grayb ? (Weighting ^ 255) : Weighting)) / 255.0 * (bl - bb) + bb)));
+
+            if (std::abs(rr - rrr) > 1 || std::abs(gr - grr) > 1 || std::abs(br - brr) > 1)
+                std::cout << "incorrect";
+        }
 
         screen->Plot( X0, Y0 + 1, RGB( rr, gr, br ) );
     }
@@ -270,7 +333,7 @@ void Game::Tick( float /* deltaTime */ )
 	int iterCount = 0;
 	// draw up to lidx
 	memset( screen->pixels, 255, SCRWIDTH * SCRHEIGHT * 4 );
-	for (int j = 0; j < lidx; j++, lineCount++)
+	for (int j = 0; j < lidx; j++, lineCount++, curLines++)
 	{
 		DrawWuLine( screen, lx1[j], ly1[j], lx2[j], ly2[j], lc[j] );
 	}
@@ -289,21 +352,42 @@ void Game::Tick( float /* deltaTime */ )
 		if (diff < fitness) fitness = diff; else UndoMutation( lidx );
 		lidx = (lidx + 1) % LINES;
 		iterCount++;
+        curIter++;
 	}
 	// stats
 	char t[128];
 	float elapsed = timer.elapsed();
 	float lps = (float)lineCount / elapsed;
-	peak = max( lps, peak );
+    peak = max(lps, peak);
+
+    curTicks++;
+    curElapsed += elapsed;
+    avg_ips = curIter / curElapsed;
+    avg_lps = curLines / curElapsed;
+    avg_tps = curTicks / curElapsed;
+
+    screen->Bar(0, SCRHEIGHT - 57, 130, SCRHEIGHT - 1, 0);
+
+    sprintf(t, "avg_ips: %5.2f", avg_ips);
+    screen->Print(t, 2, SCRHEIGHT - 56, 0xffffff);
+    sprintf(t, "avg_lps: %5.2f", avg_lps);
+    screen->Print(t, 2, SCRHEIGHT - 48, 0xffffff);
+    sprintf(t, "avg_tps: %5.2f", avg_tps);
+    screen->Print(t, 2, SCRHEIGHT - 40, 0xffffff);
+
+    sprintf(t, "peak:    %5.2f", peak);
+    screen->Print(t, 2, SCRHEIGHT - 32, 0xffffff);
 	sprintf( t, "fitness: %i", fitness );
-	screen->Bar( 0, SCRHEIGHT - 33, 130, SCRHEIGHT - 1, 0 );
 	screen->Print( t, 2, SCRHEIGHT - 24, 0xffffff );
 	sprintf( t, "lps:     %5.2fK", lps );
 	screen->Print( t, 2, SCRHEIGHT - 16, 0xffffff );
 	sprintf( t, "ips:     %5.2f", (iterCount * 1000) / elapsed );
 	screen->Print( t, 2, SCRHEIGHT - 8, 0xffffff );
-	sprintf( t, "peak:    %5.2f", peak );
-	screen->Print( t, 2, SCRHEIGHT - 32, 0xffffff );
+
+    if (curElapsed > measurementDelay)
+        while (true)
+        {
+        }
 }
 
 // -----------------------------------------------------------
@@ -312,11 +396,14 @@ void Game::Tick( float /* deltaTime */ )
 // -----------------------------------------------------------
 void Game::Shutdown()
 {
-	FILE* f = fopen( LINEFILE, "wb" );
-	fwrite( lx1, 4, LINES, f );
-	fwrite( ly1, 4, LINES, f );
-	fwrite( lx2, 4, LINES, f );
-	fwrite( ly2, 4, LINES, f );
-	fwrite( lc, 4, LINES, f );
-	fclose( f );
+    FILE* f = fopen(LINEFILE, "wb");
+    if (saveProgress) 
+    {
+        fwrite(lx1, 4, LINES, f);
+        fwrite(ly1, 4, LINES, f);
+        fwrite(lx2, 4, LINES, f);
+        fwrite(ly2, 4, LINES, f);
+        fwrite(lc, 4, LINES, f);
+        fclose(f);
+    }
 }
