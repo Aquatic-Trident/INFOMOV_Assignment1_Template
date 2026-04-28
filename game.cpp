@@ -150,13 +150,16 @@ void DrawWuLine( Surface *screen, int X0, int Y0, int X1, int Y1, uint clrLine )
             weighting for the paired pixel */
             Weighting = ErrorAcc >> 8;
 
+            //TODO: manually do the colorref to byte calculations without casts
             BYTE rr, gr, br;
             COLORREF clrBackGround = screen->pixels[X0 + Y0 * SCRWIDTH];
             BYTE rb = GetRValue( clrBackGround );
             BYTE gb = GetGValue( clrBackGround );
             BYTE bb = GetBValue( clrBackGround );
+            //TODO: convert brightness multiplication to integer multiplication
             short n_weight = rl <= rb && gl <= gb && bl < bb ? Weighting : grayl < rb * 0.299 + gb * 0.587 + bb * 0.114 ? Weighting : (Weighting ^ 255);
 
+            //TODO: convert multiplying with 255 to bitsift + subtraction
             rr = ((rb > rl ? (n_weight * (rb - rl) + rl * 255) : (n_weight * (rl - rb) + rb * 255)) >> 8) + 1;
             gr = ((gb > gl ? (n_weight * (gb - gl) + gl * 255) : (n_weight * (gl - gb) + gb * 255)) >> 8) + 1;
             br = ((bb > bl ? (n_weight * (bb - bl) + bl * 255) : (n_weight * (bl - bb) + bb * 255)) >> 8) + 1;
